@@ -7,6 +7,7 @@ from ..repository.page_repository import PageRepository
 from ..repository.post_repository import PostRepository
 from .blog_service import BlogService
 from .builder_client import BuilderClient
+from .theme_service import THEME_SLUG, parse_theme, theme_css
 
 
 def _dump(schema, obj) -> dict:
@@ -62,9 +63,14 @@ class BuildService:
 
     def _make_bundle(self, blog: Blog, include_drafts: bool) -> dict:
         keep = lambda status: include_drafts or status == "published"
+        all_pages = self.pages.list_by_blog(blog.id)
+        theme_page = next((p for p in all_pages if p.slug == THEME_SLUG), None)
+        theme = parse_theme(theme_page.content if theme_page else None)
         return {
             "blog": _dump(BlogOut, blog),
-            "pages": [_dump(PageOut, p) for p in self.pages.list_by_blog(blog.id) if keep(p.status)],
+            "theme": {"scene": theme.scene, "blog": theme.blog},
+            "theme_css": theme_css(theme),
+            "pages": [_dump(PageOut, p) for p in all_pages if keep(p.status) and p.slug != THEME_SLUG],
             "posts": [
                 {**_dump(PostSummary, p), "content": p.content}
                 for p in self.posts.list_by_blog(blog.id)

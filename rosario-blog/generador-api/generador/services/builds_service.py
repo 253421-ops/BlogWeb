@@ -41,7 +41,7 @@ def run_job(app, build_id: str) -> None:
                 raise BuildError("NO_CONTENT", "Aún no hay contenido: pide la compilación desde el CMS (POST /api/build)")
             save_last_bundle(app.state.settings, bundle)
             posts, categories, pages = from_bundle(bundle)
-            files = render_site(posts, categories, app.state.settings, pages)
+            files = render_site(posts, categories, app.state.settings, pages, bundle)
             write_site(files, app.state.settings.output_dir)
             job.status, job.pages_generated = "SUCCEEDED", sum(1 for f in files if f.endswith(".html"))
         except BuildError as err:

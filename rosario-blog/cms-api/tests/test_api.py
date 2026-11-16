@@ -95,7 +95,7 @@ def test_full_flow(client, auth):
 
     # métricas (simuladas)
     met = client.get(f"{base}/metrics", headers=auth).json()
-    assert met == {"visitas": 0, "visitantesUnicos": 0, "simulated": True}
+    assert (met["visitas"], met["visitantesUnicos"], met["simulated"]) == (0, 0, True)
 
     # borrados
     assert client.delete(f"{base}/categories/{cat['id']}", headers=auth).status_code == 204
@@ -160,3 +160,14 @@ def test_blog_ownership_is_enforced_by_service(client, auth):
     assert client.get(f"/api/blogs/{mine['id']}/pages", headers=other).status_code == 404
     assert client.post("/api/build", json={"blogId": mine["id"]}, headers=other).status_code == 404
     assert client.get("/api/blogs", headers=other).json() == []
+
+
+def test_interfaz_y_tema(client, auth):
+    """La interfaz web se sirve, y el CSS del tema sólo acepta valores válidos (no se puede inyectar CSS)."""
+    assert client.get("/app/").status_code == 200
+    assert "Panel" in client.get("/app/").text
+    ok = client.post("/api/theme/css", json={"scene": "atardecer", "accent": "#ff8fa3", "font": "clasica"}, headers=auth)
+    assert ok.status_code == 200 and "--accent:#ff8fa3" in ok.json()["css"] and "Playfair" in ok.json()["css"] and "--sky3:#ff9a5c" in ok.json()["css"]
+    bad = client.post("/api/theme/css", json={"accent": "red;}body{display:none"}, headers=auth)
+    assert bad.status_code == 422
+    assert client.post("/api/theme/css", json={}).status_code == 401

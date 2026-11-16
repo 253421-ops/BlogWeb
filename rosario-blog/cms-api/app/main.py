@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
@@ -17,6 +17,7 @@ from .controllers import (
     metrics_controller,
     page_controller,
     post_controller,
+    theme_controller,
 )
 from .database import Base, SessionLocal, engine
 from .exceptions import AppError
@@ -63,10 +64,26 @@ for controller in (
     media_controller,
     build_controller,
     metrics_controller,
+    theme_controller,
 ):
     app.include_router(controller.router, prefix="/api")
 
+STATIC = Path(__file__).parent / "static"
+
+
+@app.get("/", include_in_schema=False)
+def home():
+    return RedirectResponse("/app/")
+
+
+app.mount("/app", StaticFiles(directory=STATIC, html=True), name="interfaz")
 app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
+
+
+@app.get("/api/config", tags=["health"])
+def public_config():
+    """Dato público para la interfaz: dónde está publicado el sitio."""
+    return {"siteUrl": (settings.builder_url.rstrip("/") + "/site/") if settings.builder_url else ""}
 
 
 @app.get("/api/health", tags=["health"])

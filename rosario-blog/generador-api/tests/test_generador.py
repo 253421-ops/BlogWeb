@@ -25,10 +25,12 @@ def test_generador_compila_publica_y_falla_con_gracia(tmp_path):
     assert c.post("/api/v1/builds", headers=H("builds:read")).status_code == 403
     assert c.post("/api/v1/builds").status_code == 401
     job = c.get("/api/v1/builds/latest", headers=H("builds:read")).json()
-    assert job["status"] == "SUCCEEDED" and job["pages_generated"] == 3
+    assert job["status"] == "SUCCEEDED" and job["pages_generated"] == 4   # inicio, blog, la página y la entrada
     page = (tmp_path / "site/posts/sigo-intentandolo/index.html").read_text(encoding="utf-8")
     assert "<script>x" not in page and 'data-slug="sigo-intentandolo"' in page and "/api/v1/events" in page   # sin XSS y con el script de visitas
     assert "<strong>hola</strong>" in (tmp_path / "site/index.html").read_text(encoding="utf-8")
+    assert "Todas las entradas" in (tmp_path / "site/blog/index.html").read_text(encoding="utf-8")               # página del blog con listado
+    assert "<svg" in (tmp_path / "site/index.html").read_text(encoding="utf-8") and "--sky1" in (tmp_path / "site/assets/style.css").read_text(encoding="utf-8")
     assert json.loads((tmp_path / "site/api/posts.json").read_text(encoding="utf-8"))["items"][0]["slug"] == "sigo-intentandolo"
     assert "Sigo intentándolo" in c.get("/site/posts/sigo-intentandolo/").text                                # el servicio sirve el sitio
     bundle["posts"][0]["status"] = "draft"                                                                    # vuelve a borrador en el CMS

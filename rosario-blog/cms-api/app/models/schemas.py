@@ -138,6 +138,17 @@ class BuildIn(CamelModel):
     include_drafts: bool = False
 
 
+HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
+
+
+class ThemeIn(CamelModel):
+    """Tema visual del sitio. Todo se valida: el color es #rrggbb y plantilla y tipografía salen de listas cerradas."""
+    scene: Literal["noche", "atardecer", "amanecer"] = "noche"     # plantilla: paisaje y paleta del sitio
+    accent: HexColor | None = None                                 # color de acento propio (si no, el de la plantilla)
+    font: Literal["manuscrita", "clasica", "moderna"] = "manuscrita"
+    blog: Literal["tarjetas", "lista"] = "tarjetas"                # cómo se ve el listado del blog
+
+
 class BuildOut(CamelModel):
     id: int
     blog_id: int
@@ -153,3 +164,9 @@ class MetricsOut(CamelModel):
     visitas: int
     visitantes_unicos: int
     simulated: bool = False
+    sesiones: int = 0
+    tiempo_medio_seg: int = 0
+    rebote_bp: int = 0
+    dispositivos: dict = {}
+    por_dia: list[dict] = []
+    paginas: list[dict] = []

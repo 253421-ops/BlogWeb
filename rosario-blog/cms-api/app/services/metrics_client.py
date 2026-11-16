@@ -16,4 +16,15 @@ class MetricsClient:
         resp = httpx.get(f"{self.base_url}/api/v1/metrics/overview", headers={"Authorization": f"Bearer {token}"}, timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        return {"visitas": data["views_total"], "visitantesUnicos": data["unique_visitors"], "simulated": False}
+        out = {"visitas": data["views_total"], "visitantesUnicos": data["unique_visitors"], "simulated": False,
+               "sesiones": data.get("sessions", 0), "tiempoMedioSeg": data.get("avg_dwell_time_sec", 0),
+               "reboteBp": data.get("bounce_rate_bp", 0), "dispositivos": data.get("devices") or {},
+               "porDia": [], "paginas": []}
+        for key, path, field in (("porDia", "timeseries", "items"), ("paginas", "pages", "items")):   # extras: si fallan, el resumen sigue sirviendo
+            try:
+                r = httpx.get(f"{self.base_url}/api/v1/metrics/{path}", headers={"Authorization": f"Bearer {token}"}, timeout=10)
+                r.raise_for_status()
+                out[key] = r.json().get(field, [])
+            except Exception:  # noqa: BLE001
+                pass
+        return out
