@@ -111,8 +111,9 @@ def get_build_service(
     posts: PostRepository = Depends(get_post_repository),
     categories: CategoryRepository = Depends(get_category_repository),
     builder: BuilderClient = Depends(get_builder_client),
+    media: MediaRepository = Depends(get_media_repository),
 ) -> BuildService:
-    return BuildService(builds, blogs, pages, posts, categories, builder)
+    return BuildService(builds, blogs, pages, posts, categories, builder, media)
 
 
 def get_metrics_service(

@@ -27,3 +27,15 @@ def delete_media(blog_id: int, media_id: int, service: MediaService = Depends(ge
                  user: User = Depends(get_current_user)):
     service.delete(blog_id, media_id, user)
     return Response(status_code=204)
+
+
+public = APIRouter(tags=["media"])
+_TYPES = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
+
+
+@public.get("/uploads/{blog_id}/{stored_name}", include_in_schema=False)
+def serve_upload(blog_id: int, stored_name: str, service: MediaService = Depends(get_media_service)):
+    """Las imágenes se sirven desde la base de datos (no se pierden cuando Render duerme)."""
+    data = service.read(blog_id, stored_name)
+    ctype = _TYPES.get(stored_name[stored_name.rfind("."):], "application/octet-stream")
+    return Response(data, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})

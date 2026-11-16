@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from generador.config import Settings
 from generador.controllers import builds_controller
 from generador.models import Base
+from generador.services.builds_service import rebuild_if_missing
 from generador.repository.builds_repository import BuildsRepository
 from common.app_factory import create_base_app
 from common.db import make_engine
@@ -27,5 +28,9 @@ def create_app(settings=None, engine=None, sync_builds=False):
         BuildsRepository(session).fail_interrupted(to_iso(utcnow()))      # lo que quedó "RUNNING" tras un reinicio
     app.include_router(builds_controller.router)
     Path(settings.output_dir).mkdir(parents=True, exist_ok=True)
+    try:
+        rebuild_if_missing(app)                  # Render gratis borra el disco al dormir: el sitio se vuelve a armar solo
+    except Exception:  # noqa: BLE001  (un contenido dañado no debe impedir que el servicio arranque)
+        pass
     app.mount("/site", StaticFiles(directory=settings.output_dir, html=True), name="site")   # el blog generado, visible en /site/
     return app

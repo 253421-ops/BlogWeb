@@ -68,6 +68,8 @@ for controller in (
 ):
     app.include_router(controller.router, prefix="/api")
 
+app.include_router(media_controller.public)        # /uploads/... (sin /api)
+
 STATIC = Path(__file__).parent / "static"
 
 
@@ -77,7 +79,6 @@ def home():
 
 
 app.mount("/app", StaticFiles(directory=STATIC, html=True), name="interfaz")
-app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
 
 @app.get("/api/config", tags=["health"])

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
@@ -91,6 +91,14 @@ class Media(Base):
     content_type: Mapped[str] = mapped_column(String(100))
     size: Mapped[int]
     created_at: Mapped[datetime] = _dt()
+
+
+class MediaBlob(Base):
+    """El archivo de la imagen vive en la base de datos: el disco de Render gratis se borra al dormir."""
+    __tablename__ = "media_blobs"
+    stored_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    blog_id: Mapped[int] = mapped_column(ForeignKey("blogs.id"), index=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class Build(Base):

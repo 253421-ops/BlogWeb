@@ -52,3 +52,5 @@ nav.tabs button[aria-current=page] kbd{color:#14193a;border-color:rgba(20,25,58,
 .tpl.three{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}.tpl .opt{display:flex;flex-direction:column;gap:6px;align-items:stretch;text-align:left}.tpl .opt small{font-weight:400;color:var(--mute);font-size:12px}.tpl .opt b{font-weight:600}
 .thumb{display:block;height:84px;border-radius:10px;border:1px solid var(--line)}details summary{cursor:pointer;font-weight:600;color:var(--gold)}details[open] summary{margin-bottom:6px}
 .dirty{font-size:12px;color:var(--gold);margin-right:4px}
+
+.toolrow{display:flex;align-items:center;gap:10px;margin:8px 0 4px}.toolrow small{color:var(--muted,#666)}

@@ -13,6 +13,8 @@ class UniqueViolation(Exception):
 
 
 def make_engine(url: str) -> Engine:
+    if url.startswith("postgres://"):            # Render entrega «postgres://»; SQLAlchemy pide «postgresql://»
+        url = "postgresql://" + url[len("postgres://"):]
     backend = make_url(url)
     options: dict = {}
     if backend.get_backend_name() == "sqlite":

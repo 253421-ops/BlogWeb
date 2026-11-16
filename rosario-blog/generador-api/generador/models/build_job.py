@@ -20,3 +20,10 @@ class BuildJob(Base):
     pages_generated: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class SiteState(Base):
+    """El último contenido recibido del CMS: con él el sitio se reconstruye solo cuando el servicio despierta."""
+    __tablename__ = "site_state"
+    key: Mapped[str] = mapped_column(String(30), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)

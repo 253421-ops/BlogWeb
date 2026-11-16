@@ -4,7 +4,7 @@ import threading
 import time
 from pathlib import Path
 
-from generador.models import BuildJob
+from generador.models import BuildJob, SiteState
 from generador.repository.builds_repository import BuildsRepository
 from generador.services.site_builder import BuildError, from_bundle, render_site, write_site
 from common.errors import not_found
@@ -18,15 +18,40 @@ def _bundle_file(settings) -> Path:
     return Path(settings.output_dir).resolve().parent / "last_bundle.json"
 
 
-def save_last_bundle(settings, bundle: dict) -> None:
+def save_last_bundle(settings, bundle: dict, session=None) -> None:
+    raw = json.dumps(bundle, ensure_ascii=False)
+    if session is not None:                                  # en la base de datos: sobrevive a que Render duerma el servicio
+        session.merge(SiteState(key="bundle", value=raw))
+        session.commit()
     f = _bundle_file(settings)
-    f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(raw, encoding="utf-8")
+    except OSError:
+        pass
 
 
-def load_last_bundle(settings) -> dict | None:
+def load_last_bundle(settings, session=None) -> dict | None:
+    if session is not None:
+        row = session.get(SiteState, "bundle")
+        if row is not None:
+            return json.loads(row.value)
     f = _bundle_file(settings)
     return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+
+
+def rebuild_if_missing(app) -> bool:
+    """Al arrancar: si hay contenido guardado pero el sitio no existe (disco borrado), lo vuelve a generar."""
+    out = Path(app.state.settings.output_dir)
+    if (out / "index.html").exists():
+        return False
+    with app.state.session_factory() as session:
+        bundle = load_last_bundle(app.state.settings, session)
+        if bundle is None:
+            return False
+        posts, categories, pages = from_bundle(bundle)
+        write_site(render_site(posts, categories, app.state.settings, pages, bundle), app.state.settings.output_dir)
+    return True
 
 
 def run_job(app, build_id: str) -> None:
@@ -36,10 +61,10 @@ def run_job(app, build_id: str) -> None:
         job.status, job.started_at = "RUNNING", to_iso(utcnow())
         repo.save()
         try:
-            bundle = app.state.bundles.pop(build_id, None) or load_last_bundle(app.state.settings)
+            bundle = app.state.bundles.pop(build_id, None) or load_last_bundle(app.state.settings, session)
             if bundle is None:
                 raise BuildError("NO_CONTENT", "Aún no hay contenido: pide la compilación desde el CMS (POST /api/build)")
-            save_last_bundle(app.state.settings, bundle)
+            save_last_bundle(app.state.settings, bundle, session)
             posts, categories, pages = from_bundle(bundle)
             files = render_site(posts, categories, app.state.settings, pages, bundle)
             write_site(files, app.state.settings.output_dir)

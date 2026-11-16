@@ -1,5 +1,6 @@
 """EL GENERADOR: 1) EXTRAER lo publicado del CMS  2) RENDERIZAR todas las páginas en memoria  3) PUBLICAR los archivos.
 Si falla algo antes del paso 3, el sitio anterior queda intacto."""
+import base64
 import html
 import json
 import math
@@ -8,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from common.markdown import render_markdown
+from generador.services import sections as sec
 from generador.services.scene import build_scene
 
 
@@ -102,12 +104,34 @@ addEventListener('pagehide',leave);document.addEventListener('visibilitychange',
 document.addEventListener('click',function(ev){var a=ev.target.closest&&ev.target.closest('a[href]');if(a&&a.host&&a.host!==location.host)send('link_click',{target_host:a.host})})})();"""
 
 
+SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,120}\.(jpg|png|webp|gif)$")
+
+
+def localize_media(bundle: dict, base: str, posts: list[dict], pages: list[dict]) -> dict[str, bytes]:
+    """Guarda las imágenes del paquete dentro del sitio y reescribe sus direcciones en los textos."""
+    files: dict[str, bytes] = {}
+    for m in bundle.get("media") or []:
+        name = m.get("name") or ""
+        if not SAFE_NAME.match(name) or not m.get("url"):
+            continue
+        try:
+            files[f"assets/media/{name}"] = base64.b64decode(m["data"], validate=True)
+        except Exception:  # noqa: BLE001
+            continue
+        pat = re.compile(r"(?:https?://[^/\s)\"']+)?" + re.escape(m["url"]))
+        for item in posts:
+            item["body"] = pat.sub(f"{base}/assets/media/{name}", item["body"])
+        for item in pages:
+            item["content"] = pat.sub(f"{base}/assets/media/{name}", item.get("content") or "")
+    return files
+
+
 @lru_cache(maxsize=1)
 def _scene() -> str:
     return build_scene()
 
 
-def render_site(posts: list[dict], categories: list[dict], cfg, pages: list[dict] | None = None, bundle: dict | None = None) -> dict[str, str]:
+def render_site(posts: list[dict], categories: list[dict], cfg, pages: list[dict] | None = None, bundle: dict | None = None) -> dict[str, str | bytes]:
     bundle = bundle or {}
     base = cfg.site_base.rstrip("/")
     cat = {c["category_id"]: c["name"] for c in categories}
@@ -120,12 +144,20 @@ def render_site(posts: list[dict], categories: list[dict], cfg, pages: list[dict
     blog_tpl = theme.get("blog") if theme.get("blog") in ("tarjetas", "lista") else "tarjetas"
     tcss = bundle.get("theme_css") or ""
     tcss = tcss if SAFE_VARS.match(tcss) else ":root{" + BASE_VARS + "}"
-    pages = pages or []
-    others = [g for g in pages if g.get("type") != "landing"]
+    pages = [dict(g) for g in (pages or [])]
+    posts = [dict(q) for q in posts]
+    media = localize_media(bundle, base, posts, pages)
+    about = next((g for g in pages if g.get("slug") == "sobre-mi"), None)
+    others = [g for g in pages if g.get("type") != "landing" and g.get("slug") != "sobre-mi"]
     n = len(posts)
     plural = lambda k, one, many: f"{k} {one if k == 1 else many}"
 
     def dock(active: str) -> str:
+        if active == "inicio":
+            anchors = [("sobre-mi", "☾ Sobre mí"), ("dibujos", "🎨 Dibujos"), ("carrera", "⌬ Carrera"), ("textil", "❀ Textil"), ("proyectos", "☄ Proyectos"),
+                       ("materias", "✎ Materias"), ("herramientas", "⚙ Herramientas"), ("pensamientos", "☁ Pensamientos"), ("blog", "✦ Blog")]
+            return ('<nav class="dock" aria-label="Principal"><a href="#contenido">⌂ Inicio</a>' + "".join(f'<a href="#{k}">{t}</a>' for k, t in anchors)
+                    + f'<a href="{base}/blog/">Todas las entradas</a></nav>')
         items = [("inicio", f"{base}/", "✦ Inicio"), ("blog", f"{base}/blog/", "✎ Blog")] + [(g["slug"], f"{base}/{g['slug']}/", e(g["title"])) for g in others]
         return '<nav class="dock" aria-label="Principal">' + "".join(f'<a href="{h}"{" aria-current=page" if k == active else ""}>{t}</a>' for k, h, t in items) + "</nav>"
 
@@ -151,23 +183,23 @@ def render_site(posts: list[dict], categories: list[dict], cfg, pages: list[dict
         return (f'<a class="card{" big" if big else ""}" href="{base}/posts/{e(p["slug"])}/" data-cat="{e(label)}" data-t="{e((p["title"] + " " + extract).lower())}"><span class="chip">{e(label)}</span>'
                 f'<h3>{e(p["title"])}</h3><p>{e(extract)}</p><span class="meta">{e(p["published_at"][:10])} · {mins} min de lectura</span><span class="more">Leer →</span></a>')
 
-    files = {"assets/style.css": tcss + "\n" + CSS, "assets/tracker.js": TRACKER, "assets/site.js": SITE_JS}
+    files: dict = {"assets/style.css": tcss + "\n" + CSS + sec.CSS, "assets/tracker.js": TRACKER, "assets/site.js": SITE_JS + "\n" + sec.JS}
+    files.update(media)
     landing = next((g for g in pages if g.get("type") == "landing"), None)
     intro = render_markdown(landing["content"]) if landing and landing.get("content") else f"<p>{e(desc)}</p>"
     empty = '<p class="panel">Aún no hay entradas publicadas. Cuando publiques la primera, aparecerá aquí.</p>'
 
     # ---- portada ----
     hero = (f'<div class="hero-in"><div class="box"><span class="kicker">un diario de pequeños intentos</span><h1>{e(title)}</h1><div class="intro">{intro}</div>'
-            f'<div class="btns"><a class="btn fill" href="{base}/blog/">Leer el blog →</a>' + (f'<a class="btn" href="{base}/{e(others[0]["slug"])}/">{e(others[0]["title"])}</a>' if others else "") + '</div></div></div>')
+            f'<div class="btns"><a class="btn fill" href="#sobre-mi">Quién soy →</a><a class="btn" href="#carrera">¿Es para ti?</a><a class="btn" href="{base}/blog/">Leer el blog</a></div></div></div>')
+    special, normal = sec.split_posts(posts, cat)
+    about_img = sec.cover(about["content"]) if about and about.get("content") else None
+    about_html = render_markdown(re.sub(r"!\[[^\]]*\]\([^)]*\)", "", about["content"])) if about and about.get("content") else None
+    sections = sec.render_sections(base, special, normal, about_html, about_img, card, empty, len(posts))
     counts: dict[str, int] = {}
     for p in posts:
         counts[cat.get(p["category_id"], "") or "Entrada"] = counts.get(cat.get(p["category_id"], "") or "Entrada", 0) + 1
-    cats_html = ('<div class="sec"><h2>Lo que encontrarás</h2></div><div class="cats">' + "".join(
-        f'<a class="cat" href="{base}/blog/"><h3>{e(k)}</h3><span>{plural(v, "entrada", "entradas")}</span></a>' for k, v in list(counts.items())[:6]) + '</div>') if counts else ""
-    latest = ('<div class="sec"><h2>Últimas entradas</h2><a href="' + base + '/blog/">Ver todas →</a></div><div class="grid">' + "".join(card(p) for p in posts[:3]) + '</div>') if posts else '<div class="sec"><h2>Últimas entradas</h2></div>' + empty
-    note = (f'<section class="note"><div><h2>Lo importante se cuida despacio</h2><p>Cada entrada es un pequeño paso. No hace falta tenerlo todo claro para empezar a escribir.</p></div>'
-            f'<div class="n">{n}<span style="font:600 14px var(--font-body);display:block;color:#6a5a2b">{"entrada" if n == 1 else "entradas"}</span></div></section>')
-    files["index.html"] = page(title, hero, cats_html + latest + note, "inicio", compact=False)
+    files["index.html"] = page(title, hero, sections, "inicio", compact=False)
 
     # ---- blog (listado con buscador y filtros) ----
     chips = '<button class="chip f" data-c="" aria-pressed="true">Todas</button>' + "".join(f'<button class="chip f" data-c="{e(k)}" aria-pressed="false">{e(k)}</button>' for k in counts)
@@ -194,14 +226,17 @@ def render_site(posts: list[dict], categories: list[dict], cfg, pages: list[dict
     return files
 
 
-def write_site(files: dict[str, str], out_dir: str) -> None:
+def write_site(files: dict[str, str | bytes], out_dir: str) -> None:
     root = Path(out_dir).resolve()
     for rel, content in files.items():
         target = (root / rel).resolve()
         if root not in target.parents:
             raise BuildError("WRITE_FAILED", f"Ruta fuera de la carpeta de salida: {rel}")
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
+        if isinstance(content, bytes):
+            target.write_bytes(content)
+        else:
+            target.write_text(content, encoding="utf-8")
     for old in root.rglob("*"):                                     # borra lo que ya no existe (p. ej. una entrada archivada)
         if old.is_file() and old.relative_to(root).as_posix() not in files:
             old.unlink()

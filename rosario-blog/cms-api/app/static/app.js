@@ -20,6 +20,17 @@ const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const markDirty = () => { S.dirty = true; localStorage.setItem('dirty', '1'); };
 const fmtDate = (d) => (d || '').slice(0, 10);
 
+const SECTIONS = ['Dibujos', 'Proyectos', 'Pensamientos', 'Innovación textil'];
+const missingSections = () => SECTIONS.filter((n) => !S.cats.some((c) => c.name.toLowerCase() === n.toLowerCase()));
+function shrink(file, max = 1400) {                                   // reduce la foto antes de subirla: pesa menos y carga rápido
+  return new Promise((res, rej) => {
+    const im = new Image(), url = URL.createObjectURL(file);
+    im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url); c.toBlob((b) => (b ? res(b) : rej(new Error('No se pudo reducir la imagen'))), 'image/jpeg', 0.85); };
+    im.onerror = () => rej(new Error('Ese archivo no es una imagen')); im.src = url;
+  });
+}
+
 /* ---------- red ---------- */
 async function api(method, path, body, form) {
   const opt = { method, headers: {} };
@@ -152,11 +163,12 @@ function vEdit() {
   <div class="page-h"><h1>${e.id ? 'Editar' : 'Nueva'} ${isPost ? 'entrada' : 'página'}</h1></div>
   <div id="recover"></div>
   <div class="split"><form data-form="edit"><label for="f-title">Título</label><input id="f-title" type="text" data-f="title" value="${esc(e.title)}" required maxlength="200" autofocus>
-    <label for="f-content">Contenido <small>## Subtítulo · **negritas** · - lista · &gt; cita</small></label><textarea id="f-content" data-f="content">${esc(e.content)}</textarea>
+    <label for="f-content">Contenido <small>## Subtítulo · **negritas** · - lista · &gt; cita</small></label><p class="toolrow"><button class="btn ghost sm" type="button" data-act="pickimg">🖼 Insertar imagen</button><input type="file" id="imgfile" accept="image/*" hidden><small id="imgmsg"></small></p><textarea id="f-content" data-f="content">${esc(e.content)}</textarea>
+    ${isPost ? `<label for="f-cat">¿Dónde aparece? <small>elige una sección de la portada o déjalo en «Sin categoría» para el blog</small></label><div style="display:flex;gap:8px;flex-wrap:wrap"><select id="f-cat" data-f="categoryId">${catOpts}</select>${missingSections().length ? '<button class="btn ghost sm" type="button" data-act="addsections">＋ Crear secciones de la portada</button>' : ''}</div>` : '<p class="sub">Para tu foto y texto de «Sobre mí»: crea una página con dirección <b>sobre-mi</b> y pon la imagen arriba.</p>'}
     <label class="chk" style="margin-top:16px"><input type="checkbox" data-f="status" ${e.status === 'published' ? 'checked' : ''}> Publicar en el blog <small>(si no, queda como borrador)</small></label>
     <details style="margin-top:14px"><summary>Más opciones</summary>
       ${isPost ? `<label for="f-excerpt">Resumen <small>aparece en las tarjetas</small></label><input id="f-excerpt" type="text" data-f="excerpt" value="${esc(e.excerpt)}">
-      <label for="f-cat">Categoría</label><div style="display:flex;gap:8px"><select id="f-cat" data-f="categoryId">${catOpts}</select><input type="text" id="newcat" placeholder="Nueva…" style="max-width:150px" aria-label="Nueva categoría"><button class="btn ghost sm" type="button" data-act="addcat">Crear</button></div>` :
+      <label for="newcat">Otra categoría</label><div style="display:flex;gap:8px"><input type="text" id="newcat" placeholder="Nueva…" style="max-width:150px" aria-label="Nueva categoría"><button class="btn ghost sm" type="button" data-act="addcat">Crear</button></div>` :
       `<label for="f-type">Tipo</label><select id="f-type" data-f="type"><option value="page" ${e.type === 'page' ? 'selected' : ''}>Página</option><option value="landing" ${e.type === 'landing' ? 'selected' : ''}>Texto de la portada</option></select>`}
       <label for="f-slug">Dirección (slug)</label><input id="f-slug" type="text" data-f="slug" value="${esc(e.slug)}" placeholder="se genera del título"></details>
     <p style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn fill" type="submit">Guardar <kbd>Ctrl S</kbd></button><button class="btn" type="button" data-act="savebuild">Guardar y publicar sitio <kbd>Ctrl ↵</kbd></button></p></form>
@@ -293,6 +305,8 @@ const H = {
   savebuild: () => saveEdit(true), newpage: () => editPage(null), editpage: (d) => editPage(S.pages.find((p) => p.id === Number(d.id))),
   delpage: async (d) => { if (!confirm('¿Borrar esta página? Puedes volver a crearla, pero perderás su texto.')) return; try { await api('DELETE', `/blogs/${S.blog.id}/pages/${d.id}`); markDirty(); await go('pages'); toast('Página borrada.'); } catch (e) { toast(e.message); } },
   recover: () => { const d = JSON.parse(localStorage.getItem(draftKey())); Object.assign(S.edit, d.data); render(); toast('Cambios recuperados.'); }, dropdraft: () => { localStorage.removeItem(draftKey()); $('#recover').innerHTML = ''; },
+  pickimg: () => $('#imgfile').click(),
+  addsections: async () => { try { for (const n of missingSections()) S.cats.push(await api('POST', `/blogs/${S.blog.id}/categories`, { name: n })); render(); toast('Listo: ya puedes elegir Dibujos, Proyectos, Pensamientos o Innovación textil.'); } catch (e) { toast(e.message); } },
   addcat: async () => { const n = $('#newcat').value.trim(); if (!n) return; try { const c = await api('POST', `/blogs/${S.blog.id}/categories`, { name: n }); S.cats.push(c); S.edit.categoryId = c.id; render(); toast('Categoría creada.'); } catch (e) { toast(e.message); } },
   runpal: (d) => { const a = ACTIONS.find((x) => x[0] === d.n); S.modal = null; render(); if (a) a[2](); },
   resetaccent: () => { S.theme.accent = null; render(); },
@@ -321,8 +335,20 @@ document.addEventListener('input', (ev) => {
     clearTimeout(S.dt); S.dt = setTimeout(() => localStorage.setItem(draftKey(), JSON.stringify({ at: Date.now(), data: { title: S.edit.title, excerpt: S.edit.excerpt, content: S.edit.content, categoryId: S.edit.categoryId, status: S.edit.status, slug: S.edit.slug } })), 600);
   }
 });
-document.addEventListener('change', (ev) => {
-  const t = ev.target; if (!t.dataset.t) return;
+document.addEventListener('change', async (ev) => {
+  const t = ev.target;
+  if (t.id === 'imgfile' && t.files[0] && S.edit) {
+    const msg = $('#imgmsg'); msg.textContent = ' Subiendo…';
+    try {
+      const blob = await shrink(t.files[0]), fd = new FormData(); fd.append('file', blob, (t.files[0].name || 'imagen').replace(/\.[^.]+$/, '') + '.jpg');
+      const m = await api('POST', `/blogs/${S.blog.id}/media`, undefined, fd);
+      const ta = $('#f-content'), pos = ta.selectionStart || ta.value.length, md1 = `![${(t.files[0].name || '').replace(/\.[^.]+$/, '')}](${m.url})`;
+      ta.value = ta.value.slice(0, pos) + (pos && ta.value[pos - 1] !== '\n' ? '\n\n' : '') + md1 + '\n\n' + ta.value.slice(pos);
+      ta.dispatchEvent(new Event('input', { bubbles: true })); msg.textContent = ' ✓ Imagen puesta en el texto';
+    } catch (e) { msg.textContent = ' ' + e.message; }
+    t.value = ''; return;
+  }
+  if (!t.dataset.t) return;
   S.theme[t.dataset.t] = t.type === 'checkbox' ? t.checked : t.value; render();
 });
 document.addEventListener('keydown', (ev) => {
