@@ -142,10 +142,15 @@ HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
 
 
 class ThemeIn(CamelModel):
-    """Tema visual del sitio. Todo se valida: el color es #rrggbb y plantilla y tipografía salen de listas cerradas."""
-    scene: Literal["noche", "atardecer", "amanecer"] = "noche"     # plantilla: paisaje y paleta del sitio
+    """Tema visual del sitio. Todo se valida: el color es #rrggbb y escena, modo y tipografías salen de listas cerradas."""
+    mode: Literal["light", "dark"] = "dark"                        # modo de color por defecto (el lector puede cambiarlo)
+    scene: Literal["noche", "atardecer", "amanecer", "papel", "pastel", "menta"] = "noche"   # atmósfera; si no cuadra con el modo se ajusta sola
     accent: HexColor | None = None                                 # color de acento propio (si no, el de la plantilla)
-    font: Literal["manuscrita", "clasica", "moderna"] = "manuscrita"
+    font_head: Literal["editorial-serif", "modern-sans", "humanist-serif", "script-accent"] = "script-accent"   # títulos
+    font_body: Literal["reading-serif", "clean-sans", "humanist-sans"] = "clean-sans"                          # lectura
+    font_mono: Literal["jetbrains", "fira"] = "jetbrains"                                                      # código y etiquetas
+    font_scale: Literal["compact", "editorial", "spacious"] = "editorial"                                      # escala modular
+    font: Literal["manuscrita", "clasica", "moderna"] | None = None   # (antiguo) si viene, decide la tipografía de títulos
     blog: Literal["tarjetas", "lista"] = "tarjetas"                # cómo se ve el listado del blog
 
 

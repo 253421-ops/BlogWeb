@@ -171,3 +171,70 @@ def test_interfaz_y_tema(client, auth):
     bad = client.post("/api/theme/css", json={"accent": "red;}body{display:none"}, headers=auth)
     assert bad.status_code == 422
     assert client.post("/api/theme/css", json={}).status_code == 401
+
+
+def test_tema_claro_oscuro_fuentes_y_contraste(client, auth):
+    """Modo claro/oscuro, tipografías por rol, escala y contraste WCAG AA garantizado (incluso con un acento malo)."""
+    from app.services.theme_service import contrast, palette
+    r = client.post("/api/theme/css", json={"mode": "light", "scene": "menta", "fontHead": "editorial-serif", "fontBody": "reading-serif", "fontMono": "fira", "fontScale": "spacious"}, headers=auth)
+    assert r.status_code == 200
+    css = r.json()["css"]
+    assert css.startswith(":root{") and ":root[data-mode=dark]{" in css          # modo claro por defecto + paleta oscura para el lector
+    for v in ("--bg:", "--surface:", "--text:", "--text-muted:", "--accent:", "--border:", "--font-head:'Playfair", "--font-body:'Source Serif 4'", "--font-mono:'Fira Code'", "--text-base:20px", "--scale-ratio:1.333"):
+        assert v in css
+    assert "--sky3:#f1f8e6" in css                                              # atmósfera «menta»
+    assert "--sky3:#fbe9d2" in client.post("/api/theme/css", json={"mode": "light", "scene": "noche"}, headers=auth).json()["css"]   # «noche» no cuadra con modo claro → usa «papel»
+    for mode in ("light", "dark"):
+        for scene in ("noche", "papel", "pastel", "amanecer"):
+            for accent in (None, "#ffff00", "#000000", "#ffffff"):
+                p = palette(mode, scene, accent)
+                assert contrast(p["text"], p["bg"]) >= 4.5 and contrast(p["muted"], p["bg"]) >= 4.5 and contrast(p["accent_text"], p["bg"]) >= 4.5
+    assert client.post("/api/theme/css", json={"fontHead": "comic-sans"}, headers=auth).status_code == 422
+    assert client.post("/api/theme/css", json={"font": "clasica"}, headers=auth).json()["css"].count("Playfair") == 1   # el tema antiguo sigue funcionando
+
+
+def test_bundle_lleva_modo_y_fuentes(client, auth):
+    from app.dependencies import get_builder_client
+
+    class Fake:
+        received = None
+
+        def build(self, bundle):
+            Fake.received = bundle
+            return {"ok": True}
+
+    b = client.post("/api/blogs", json={"name": "Blog Tema"}, headers=auth).json()
+    base = f"/api/blogs/{b['id']}"
+    client.post(f"{base}/pages", json={"title": "Tema visual", "slug": "tema-visual", "type": "page", "status": "draft", "content": '{"mode":"light","scene":"pastel","fontScale":"compact"}'}, headers=auth)
+    app.dependency_overrides[get_builder_client] = lambda: Fake()
+    try:
+        assert client.post("/api/build", json={"blogId": b["id"]}, headers=auth).status_code == 201
+    finally:
+        app.dependency_overrides.clear()
+    t = Fake.received["theme"]
+    assert t["mode"] == "light" and t["scene"] == "pastel" and t["font_scale"] == "compact" and t["fonts_url"].startswith("https://fonts.googleapis.com/css2?")
+    assert "data-mode=dark" in Fake.received["theme_css"]
+
+
+def test_builder_client_despierta_al_generador_y_reintenta():
+    """502 al publicar: el cliente hace warm-up (GET /health con reintentos) antes del POST y reintenta si el generador aún despierta."""
+    import httpx
+    from app.services.builder_client import BuilderClient
+
+    calls, pausas = [], []
+
+    def handler(req: httpx.Request):
+        calls.append(f"{req.method} {req.url.path}")
+        if req.url.path == "/health":
+            return httpx.Response(502) if calls.count("GET /health") < 3 else httpx.Response(200, json={"status": "ok"})
+        return httpx.Response(502) if calls.count("POST /api/v1/builds") < 2 else httpx.Response(202, json={"status": "QUEUED"})
+
+    cl = BuilderClient("https://gen.example", sleep=pausas.append, transport=httpx.MockTransport(handler))
+    assert cl.build({"pages": [], "posts": []}) == {"status": "QUEUED"}
+    assert calls[:3] == ["GET /health"] * 3 and calls[3] == "POST /api/v1/builds"      # primero despierta, después publica
+    assert calls.count("POST /api/v1/builds") == 2 and pausas == [10.0, 10.0, 10.0]
+    # si el generador no despierta nunca, el error es claro (no se queda colgado)
+    dead = BuilderClient("https://gen.example", sleep=lambda s: None, transport=httpx.MockTransport(lambda r: httpx.Response(502)))
+    import pytest
+    with pytest.raises(httpx.HTTPStatusError):
+        dead.build({"pages": [], "posts": []})

@@ -68,3 +68,53 @@ def test_secciones_imagenes_y_reconstruccion(tmp_path):
     shutil.rmtree(tmp_path / "site")
     create_app(st, make_engine(db), sync_builds=True)
     assert 'id="dibujos"' in (tmp_path / "site/index.html").read_text(encoding="utf-8")
+
+
+def test_extracto_limpio_sin_markdown_crudo():
+    from common.markdown import extract_clean_excerpt
+    assert extract_clean_excerpt("![Captura de pantalla 2026-11-04 223856]") == ""                 # imagen cortada a medias
+    assert extract_clean_excerpt("![Captura](/uploads/1/x.png)\n\n## Hola **mundo** con [un enlace](http://a.b) y `código`.") == "Hola mundo con un enlace y código."
+    largo = extract_clean_excerpt("palabra " * 80, 150)
+    assert len(largo) <= 150 and largo.endswith("…")
+    assert "```" not in extract_clean_excerpt("antes\n```python\nprint(1)\n```\ndespués") and "[^nota" not in extract_clean_excerpt("a[^nota: x]b")
+
+
+def test_markdown_editorial_y_seguridad():
+    from common.markdown import render_article
+    html, toc = render_article("## Uno\n\nTexto[^nota: al margen]\n\n>> Cita\n\n:::tip Truco\nhola\n:::\n\n```python\nx = 1\n```\n\n![pie](/a.png#wide)\n\n### Dos\n\n<script>alert(1)</script> [x](javascript:alert(1))")
+    assert 'class="sidenote"' in html and 'class="pullquote"' in html and 'class="callout tip"' in html and "Truco" in html
+    assert 'class="codeblock"' in html and ">PYTHON<" in html and "data-copy" in html and 'class="wide"' in html and "<figcaption>pie</figcaption>" in html
+    assert [t["id"] for t in toc] == ["uno", "dos"]
+    assert "<script>" not in html and 'href="javascript' not in html                                  # sigue sin HTML crudo ni enlaces peligrosos
+
+
+def test_sitio_editorial_landing_modo_claro_y_tarjetas(tmp_path):
+    css = ":root{--bg:#fbf8f1;--text:#1d1b16;--accent:#8f5a00;--font-head:'Lora',Georgia,serif;--text-base:18px;--step-3:35.16px}:root[data-mode=dark]{--bg:#070d2b;--text:#eef1ff}"
+    mk = lambda i, t, body, **kw: {"id": i, "title": t, "slug": f"p{i}", "content": body, "categoryId": None, "status": "published",
+                                   "publishedAt": f"2026-10-2{i}T10:00:00Z", "createdAt": "2026-10-20T10:00:00Z", "excerpt": None, **kw}
+    bundle = {"blog": {"id": 1, "name": "Sigo"}, "theme": {"mode": "light", "scene": "papel", "blog": "tarjetas", "fonts_url": "https://fonts.googleapis.com/css2?family=Lora:wght@600;700&display=swap"},
+              "theme_css": css, "pages": [], "categories": [],
+              "posts": [mk(1, "Cómo terminamos así?", "![Captura de pantalla 2026-11-04 223856](/uploads/1/x.png)\n\nTexto limpio"),
+                        mk(2, "Editorial", "## A\n\nHola[^nota: n]\n\n## B\n\n>> Cita\n\n```sql\nselect 1\n```")]}
+    st = Settings(jwt_secret=SECRET, output_dir=str(tmp_path / "site"), landing_url="https://mi-landing.vercel.app")
+    c = TestClient(create_app(st, make_engine("sqlite://"), sync_builds=True))
+    c.post("/api/v1/builds", json={"bundle": bundle}, headers=H("builds:write"))
+    blog = (tmp_path / "site/blog/index.html").read_text(encoding="utf-8")
+    assert "Captura de pantalla" not in blog and "![" not in blog and "Texto limpio" in blog       # sin Markdown crudo en las tarjetas
+    post = (tmp_path / "site/posts/p2/index.html").read_text(encoding="utf-8")
+    assert 'class="editorial-post"' in post and 'data-mode="light"' in post and 'class="toc-fab"' in post and "data-mode-toggle" in post
+    assert 'href="https://mi-landing.vercel.app" data-landing' in post and "family=Lora" in post  # logotipo e «Inicio» vuelven a la Landing
+    style = (tmp_path / "site/assets/style.css").read_text(encoding="utf-8")
+    assert ":root[data-mode=dark]" in style and "grid-template-columns:[full-start]" in style       # dos paletas y rejilla de 3 carriles
+    assert "repeat(auto-fit,minmax(210px,1fr))" in style and "clamp(1.15rem,1.4vw,1.4rem)" in style   # tarjeta «Programación» sin desbordarse
+    assert "Programación" in (tmp_path / "site/index.html").read_text(encoding="utf-8")
+    # una Landing mal escrita no rompe ni inyecta nada
+    st2 = Settings(jwt_secret=SECRET, output_dir=str(tmp_path / "s2"), landing_url='javascript:alert(1)')
+    c2 = TestClient(create_app(st2, make_engine("sqlite://"), sync_builds=True))
+    c2.post("/api/v1/builds", json={"bundle": bundle}, headers=H("builds:write"))
+    assert "javascript:alert" not in (tmp_path / "s2/posts/p2/index.html").read_text(encoding="utf-8")
+    # CSS del tema con contenido raro → se usa el de respaldo, nunca se copia
+    bundle["theme_css"] = ":root{--x:1}body{display:none}"
+    c.post("/api/v1/builds", json={"bundle": bundle}, headers=H("builds:write"))
+    css2 = (tmp_path / "site/assets/style.css").read_text(encoding="utf-8")
+    assert not css2.startswith(":root{--x:1}") and "}body{display:none}" not in css2 and css2.startswith(":root{--bg:#070d2b")

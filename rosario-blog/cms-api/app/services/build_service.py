@@ -11,7 +11,7 @@ from ..repository.page_repository import PageRepository
 from ..repository.post_repository import PostRepository
 from .blog_service import BlogService
 from .builder_client import BuilderClient
-from .theme_service import THEME_SLUG, parse_theme, theme_css
+from .theme_service import THEME_SLUG, fonts_url, parse_theme, theme_css
 
 
 def _dump(schema, obj) -> dict:
@@ -75,9 +75,9 @@ class BuildService:
         posts_out = [{**_dump(PostSummary, p), "content": p.content}
                      for p in self.posts.list_by_blog(blog.id) if keep(p.status)]
         return {
-            "media": self._media_for(blog.id, [x.get("content") or "" for x in pages_out + posts_out]),
+            "media": self._media_for(blog.id, [(x.get("content") or "") + " " + (x.get("coverUrl") or "") for x in pages_out + posts_out]),
             "blog": _dump(BlogOut, blog),
-            "theme": {"scene": theme.scene, "blog": theme.blog},
+            "theme": {"scene": theme.scene, "blog": theme.blog, "mode": theme.mode, "font_scale": theme.font_scale, "fonts_url": fonts_url(theme)},
             "theme_css": theme_css(theme),
             "pages": pages_out,
             "posts": posts_out,

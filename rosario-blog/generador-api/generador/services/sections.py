@@ -4,6 +4,8 @@ import html
 import re
 import unicodedata
 
+from common.markdown import extract_clean_excerpt
+
 e = html.escape
 
 AREAS = [("Programación", "Escribir instrucciones para que las ideas cobren vida"), ("Redes", "Cómo se comunican los equipos y los servicios"),
@@ -100,7 +102,7 @@ def render_sections(base: str, special: dict, normal: list, about_html: str | No
 
     # ---- proyectos ----
     pj = special["proyectos"]
-    stars = ("".join(f'<a class="card star" href="{base}/posts/{e(p["slug"])}/"><span class="chip">Proyecto</span><h3>{e(p["title"])}</h3><p>{e(p.get("summary") or p["body"][:120])}</p><span class="more">Ver →</span></a>' for p in pj)
+    stars = ("".join(f'<a class="card star" href="{base}/posts/{e(p["slug"])}/"><span class="chip">Proyecto</span><h3>{e(p["title"])}</h3><p>{e(p["extract"])}</p><span class="more">Ver →</span></a>' for p in pj)
              if pj else "".join(f'<div class="card star"><span class="chip">Proyecto</span><h3>{e(n)}</h3><p>Una estrella más de mi constelación.</p></div>' for n in PROYECTOS))
     out.append(head("proyectos", "Proyectos en mi constelación", "Cada proyecto es una estrella. Se llenan con entradas de la categoría «Proyectos».") + f'<div class="grid">{stars}</div>')
 
@@ -116,7 +118,7 @@ def render_sections(base: str, special: dict, normal: list, about_html: str | No
 
     # ---- pensamientos ----
     ps = special["pensamientos"]
-    quotes = ("".join(f'<a class="quote" href="{base}/posts/{e(p["slug"])}/"><q>{e(p.get("summary") or p["body"][:160])}</q><span>{e(p["title"])}</span></a>' for p in ps)
+    quotes = ("".join(f'<a class="quote" href="{base}/posts/{e(p["slug"])}/"><q>{e(extract_clean_excerpt(p.get("summary") or "", 160) or extract_clean_excerpt(p["body"], 160))}</q><span>{e(p["title"])}</span></a>' for p in ps)
               if ps else "".join(f'<blockquote class="quote"><q>{e(t)}</q></blockquote>' for t in PENSAMIENTOS))
     out.append(head("pensamientos", "Pensamientos", "Lo que pienso… y lo que tú quieras dejarme.") + f'<div class="grid">{quotes}</div>'
                '<form id="cmf" class="card"><label>Tu nombre<input id="cn" maxlength="40" placeholder="Anónimo"></label>'
@@ -131,27 +133,28 @@ def render_sections(base: str, special: dict, normal: list, about_html: str | No
 
 
 CSS = """
-.block{padding-top:26px;scroll-margin-top:12px}.block .sec{margin:20px 0 14px}.sub{margin:6px 0 0;color:#aeb9e6;font-size:15px}.mini{font-size:30px;margin:22px 0 10px}
-.about{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:18px}.photo{min-height:300px;border-radius:24px;border:2px dashed rgba(255,255,255,.25);display:grid;place-items:center;text-align:center;color:#aeb9e6;background:rgba(255,255,255,.04) center/cover}
+.block{padding-top:26px;scroll-margin-top:12px}.block .sec{margin:20px 0 14px}.sub{margin:6px 0 0;color:var(--text-muted);font-size:15px}.mini{font-size:30px;margin:22px 0 10px}
+.about{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:18px}.photo{min-height:300px;border-radius:24px;border:2px dashed var(--border);display:grid;place-items:center;text-align:center;color:var(--text-muted);background:var(--surface) center/cover}
 .photo small{display:block;font-size:12px;margin-top:6px}.photo.has{border:0;box-shadow:0 14px 40px rgba(0,0,0,.4)}.photo.has span{display:none}
 .about-t .prose{font-size:17px}.about-t .prose h3{font-size:36px;margin:0 0 6px}.chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0}
-.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}.links small{color:#9eaadb}
+.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}.links small{color:var(--text-muted)}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px}
-.frame{position:relative;aspect-ratio:4/5;border-radius:6px;border:10px solid #f3e6c4;box-shadow:0 12px 30px rgba(0,0,0,.45),inset 0 0 0 2px rgba(0,0,0,.25);background:rgba(255,255,255,.05) center/cover;display:grid;place-items:center;color:#8f9bcb;text-decoration:none;transition:transform .2s}
+.frame{position:relative;aspect-ratio:4/5;border-radius:6px;border:10px solid #f3e6c4;box-shadow:0 12px 30px rgba(0,0,0,.45),inset 0 0 0 2px rgba(0,0,0,.25);background:var(--surface) center/cover;display:grid;place-items:center;color:var(--text-muted);text-decoration:none;transition:transform .2s}
 .frame.has:hover,.frame.has:focus-visible{transform:rotate(-1.2deg) translateY(-4px)}.frame.ghost{border-style:dashed;border-color:rgba(243,230,196,.35);box-shadow:none}
 .frame .cap{position:absolute;inset:auto 0 0 0;padding:26px 12px 10px;background:linear-gradient(transparent,rgba(0,0,0,.75));color:#fff;font:700 24px var(--font-head)}
-.grid.five{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}.grid.four{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
-.banner{margin-top:16px;padding:18px 22px;border-radius:20px;background:var(--paper);color:#2a2540;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}.banner b{font:700 32px var(--font-head);margin-right:6px}.banner span{padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.07);font-size:14px}
+.grid.five{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1.25rem}.grid.four{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1.25rem}
+.grid.five .card h3,.grid.four .card h3{font-size:clamp(1.15rem,1.4vw,1.4rem);overflow-wrap:break-word;word-break:break-word;hyphens:auto;line-height:1.2}
+.banner{margin-top:16px;padding:18px 22px;border-radius:20px;background:var(--paper);color:#2a2540;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}.banner b{font:700 32px var(--font-head);margin-right:6px}.banner span{padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.08);font-size:14px}
 .card.star{position:relative;overflow:hidden}.card.star::after{content:"✦";position:absolute;right:16px;top:12px;color:var(--accent);opacity:.7}
-.film{overflow:hidden;border-radius:16px;background:#0a0a0f;border:1px solid rgba(255,255,255,.12);padding:14px 0;margin-bottom:14px;-webkit-mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.film{overflow:hidden;border-radius:16px;background:#0a0a0f;border:1px solid var(--border);padding:14px 0;margin-bottom:14px;-webkit-mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
 .reel{display:flex;gap:12px;width:max-content;animation:reel 60s linear infinite}.film:hover .reel,.film:focus-within .reel{animation-play-state:paused}@keyframes reel{to{transform:translateX(-50%)}}
-.fr{flex:none;width:96px;height:112px;border-radius:10px;border:2px solid var(--c);background:rgba(255,255,255,.04);color:var(--c);cursor:pointer;display:grid;place-content:center;gap:4px;font:inherit}.fr b{font-size:26px}.fr small{color:#cfd6f5;font-size:11px}
-.fr.sel{background:var(--c);color:#111}.fr.sel small{color:#111}#info small{font:600 12px var(--font-body);color:var(--accent);margin-left:6px}
-.quote{margin:0;padding:22px 24px;border-radius:20px;border-left:4px solid var(--accent);background:rgba(255,255,255,.05);color:inherit;text-decoration:none;display:flex;flex-direction:column;gap:8px}
-.quote q{font:600 28px/1.2 var(--font-head);quotes:"“" "”"}.quote span{font-size:12px;color:#9eaadb}
-#cmf{margin:16px 0;gap:12px}#cmf label{display:grid;gap:4px;font-size:13px;color:#aeb9e6}#cmf input,#cmf textarea{padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.25);color:var(--text);font:inherit}
+.fr{flex:none;width:96px;height:112px;border-radius:10px;border:2px solid var(--c);background:var(--surface);color:var(--c);cursor:pointer;display:grid;place-content:center;gap:4px;font:inherit}.fr b{font-size:26px}.fr small{color:#cfd6f5;font-size:11px}
+.fr.sel{background:var(--c);color:#111}.fr.sel small{color:#111}#info small{font:600 12px var(--font-body);color:var(--accent-text);margin-left:6px}
+.quote{margin:0;padding:22px 24px;border-radius:20px;border-left:4px solid var(--accent);background:var(--surface);color:inherit;text-decoration:none;display:flex;flex-direction:column;gap:8px}
+.quote q{font:600 28px/1.2 var(--font-head);quotes:"“" "”"}.quote span{font-size:12px;color:var(--text-muted)}
+#cmf{margin:16px 0;gap:12px}#cmf label{display:grid;gap:4px;font-size:13px;color:var(--text-muted)}#cmf input,#cmf textarea{padding:10px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit}
 #cmf .btn{align-self:flex-start;cursor:pointer}
-.dock a.on{background:var(--accent);color:#14193a}.dock{scrollbar-width:none}
+.dock a.on{background:var(--accent);color:var(--on-accent)}.dock{scrollbar-width:none}
 @media (max-width:820px){.about{grid-template-columns:1fr}.photo{min-height:220px}}
 @media (prefers-reduced-motion:reduce){.reel{animation:none}}
 """
